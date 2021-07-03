@@ -1,5 +1,14 @@
+'''
+Desenvolvedor: Gabriel Rios Souza
+Data: 01/06/2021
+Objetivo: Classe para representar o Servidor no sistema de compartilhamento de Arquivos
+'''
+
+#Bibliotecas Padrão do Python
 import socket
 import threading
+
+#Classes Criadas
 from mensagem import Mensagem
 
 class Servidor:
@@ -21,42 +30,63 @@ class Servidor:
 
         while True:
 
-            # Receiving message from client
-            peerJSON, peerAddr = self.socketUDP.recvfrom(BUFFER_SIZE)
+            # Recebendo Mensagem do Peer
+            peerJSON, peerAddress = self.socketUDP.recvfrom(BUFFER_SIZE)
 
-            #Creating Thread to Comunicate with Peers
-            thread = threading.Thread(group=None, target=self.communicate, args=(peerJSON, peerAddr))
+            # Criando Thread para se comunicar com o Peer
+            thread = threading.Thread(group=None, target=self.communicate, args=(peerJSON, peerAddress))
             thread.start()
-                
+            
     def communicate(self, peerJSON, peerAddress) -> None:
         '''Metodo utilizado em Threads para enviar mensagens com sockets UDP para Peers'''
         
         oMensagemRecebida = Mensagem(jsonMessage=peerJSON)
         
-        if oMensagemRecebida.head == "JOIN": self.executeJOIN(oMensagemRecebida, peerAddress)
-        elif oMensagemRecebida.head == "LEAVE": self.executeLEAVE(peerAddress)
+        if oMensagemRecebida.head == "JOIN": self.executeJOIN(oMensagemRecebida)
+        elif oMensagemRecebida.head == "SEARCH": self.executeSEARCH(oMensagemRecebida)
+        elif oMensagemRecebida.head == "LEAVE": self.executeLEAVE(oMensagemRecebida)
         
-    def executeJOIN(self, oMensagem, peerAddress) -> None:
+    def executeJOIN(self, oMensagem) -> None:
+        '''Executa a Requisição JOIN vinda do Peer'''
         
-        # Adicionando Peer e Files ao Servidor 
+        # Adicionando Peer e Files ao Servidor
+        peerAddress = tuple(oMensagem.body['PeerAddress'])
         self.dicPeers[peerAddress] = oMensagem.body['files']
         for file in oMensagem.body['files']:
             if file in self.dicFiles: self.dicFiles[file].append(peerAddress)
             else: self.dicFiles[file] = [peerAddress]
         
-        # Sending a reply to peer:
+        # Enviando Resposta ao Peer
         oSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #UDP Using Internet Address IPv4
         oMensagemEnvio = Mensagem("JOIN_OK", {})
         oSocket.sendto(oMensagemEnvio.toJSON(), peerAddress)
         oSocket.close()
-        
+                
         print(f"Peer {peerAddress[0]}:{peerAddress[1]} adicionado com arquivos {' '.join(oMensagem.body['files'])}")
-        print(self.dicFiles)
-        print(self.dicPeers)
+    
+    def executeSEARCH(self, oMensagem) -> None:
+        '''Executa a Requisição SEARCH vinda do Peer'''
         
-    def executeLEAVE(self, peerAddress) -> None:
+        peerAddress = tuple(oMensagem.body['PeerAddress'])
+        file = oMensagem.body['File']
+        
+        print(f"Peer {peerAddress[0]}:{peerAddress[1]} solicitou arquivo {file}")
+        
+        # Enviando Resposta ao Peer:
+        oSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #UDP Using Internet Address IPv4
+        
+        lPeers = [] if file not in self.dicFiles.keys() else self.dicFiles[file]  
+        dicBody = {"PeersList": lPeers}
+        oMensagemEnvio = Mensagem("SEARCH_OK", dicBody)
+        
+        oSocket.sendto(oMensagemEnvio.toJSON(), peerAddress)
+        oSocket.close()
+         
+    def executeLEAVE(self, oMensagem) -> None:
+        '''Executa a Requisição LEAVE vinda do Peer'''
         
         # Removendo Peer e seus Files do Servidor
+        peerAddress = tuple(oMensagem.body['PeerAddress'])
         removeFiles = self.dicPeers[peerAddress]
         del self.dicPeers[peerAddress]
         
@@ -64,26 +94,25 @@ class Servidor:
             self.dicFiles[file].remove(peerAddress)
             if self.dicFiles[file] == []: del self.dicFiles[file] 
             
-        # Sending a reply to peer:
+        # Enviando Resposta ao Peer:
         oSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #UDP Using Internet Address IPv4
         oMensagemEnvio = Mensagem("LEAVE_OK", {})
         oSocket.sendto(oMensagemEnvio.toJSON(), peerAddress)
         oSocket.close()
         
-        print(self.dicFiles)
-        print(self.dicPeers)
-        
     def close(self) -> None:
         self.socketUDP.close()
 
 
+#########################################################################################
+
 # Constantes
-HOST = "127.0.0.1"      # Hostname, IP Address or empty string. (localhost IP)
 PORT = 10098            # Listen on (1-65535, non-privileged ports are > 1023)
 BUFFER_SIZE = 1024
 
-
 # Iniciando Servidor
+HOST = input("IP do Servidor: ")      # Hostname, IP Address or empty string. (localhost IP)
+
 try:
     oServidor = Servidor(HOST, PORT, BUFFER_SIZE)
     oServidor.listen()

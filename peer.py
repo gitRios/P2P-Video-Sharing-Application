@@ -1,5 +1,15 @@
+'''
+Desenvolvedor: Gabriel Rios Souza
+Data: 01/06/2021
+Objetivo: Classe para representar Peers no sistema de compartilhamento de Arquivos
+'''
+
+#Bibliotecas Padrão do Python 
 import socket
 import os
+import random
+
+#Classes Criadas
 from mensagem import Mensagem
 
 class Peer:
@@ -29,24 +39,52 @@ class Peer:
     self.getFilesFromPath()
 
     #Cria Mensagem do Request JOIN
-    dicBody = {"files": self.files,}
+    dicBody = {"PeerAddress": self.PEER_ADDRESS,
+               "files": self.files}
     oMensagemEnvio = Mensagem("JOIN", dicBody)    
     
     #Enviar Request JOIN ao Servidor
     self.socketUDP.sendto(oMensagemEnvio.toJSON(), self.SERVER_ADDRESS)
 
     #Recebe Resposta do Servidor
-    serverJSON, serverAddr = self.socketUDP.recvfrom(self.BUFFER_SIZE)
+    serverJSON, _ = self.socketUDP.recvfrom(self.BUFFER_SIZE)
     oMensagemResposta = Mensagem(jsonMessage=serverJSON)
 
     if oMensagemResposta.head == "JOIN_OK":
       print(f"Sou peer {peerIP}:{peerPort} com arquivos {' '.join(self.files)}")
+
+  def requestSEARCH(self) -> None:
+    '''Realiza o request SEARCH do Peer ao Servidor'''
     
+    #Inputs Iniciais
+    file = input('Arquivo: ').lower()
+    
+    #Cria Mensagem do Request SEARCH
+    dicBody = {"PeerAddress": self.PEER_ADDRESS,
+               "File": file}
+    oMensagemEnvio = Mensagem("SEARCH", dicBody)    
+    
+    #Enviar Request SEARCH ao Servidor
+    self.socketUDP.sendto(oMensagemEnvio.toJSON(), self.SERVER_ADDRESS)
+
+    #Recebe Resposta do Servidor
+    serverJSON, _ = self.socketUDP.recvfrom(self.BUFFER_SIZE)
+    oMensagemResposta = Mensagem(jsonMessage=serverJSON)
+
+    if oMensagemResposta.head == "SEARCH_OK":
+      if oMensagemResposta.body['PeersList'] != []:
+        print(f"Peers com arquivo solicitado: {' '.join([str(peerAddres[0])+':'+str(peerAddres[1]) for peerAddres in oMensagemResposta.body['PeersList']])}")
+      else: print("Não há Peers com o arquivo solicitado")
+       
+  def requestDOWNLOAD(self) -> None:
+    pass
+
   def requestLEAVE(self) -> None:
     '''Realiza o request LEAVE do Peer ao Servidor'''
     
     #Cria Mensagem do Request LEAVE
-    oMensagemEnvio = Mensagem("LEAVE", {})    
+    dicBody = {"PeerAddress": self.PEER_ADDRESS}
+    oMensagemEnvio = Mensagem("LEAVE", dicBody)    
     
     #Enviar Request LEAVE ao Servidor
     self.socketUDP.sendto(oMensagemEnvio.toJSON(), self.SERVER_ADDRESS)
@@ -60,7 +98,7 @@ class Peer:
   def getFilesFromPath(self) -> None:
     '''Analisa pasta do Peer e retorna lista de arquivos .mp4'''
     entries = os.listdir(self.PATH)
-    self.files = [file for file in entries if file.endswith('.ipynb')]
+    self.files = [file.lower() for file in entries if file.lower().endswith('.ipynb')]
 
   def close(self) -> None:
     self.socketUDP.close()
@@ -76,10 +114,9 @@ BUFFER_SIZE = 1024
 oPeer = Peer(SERVER_HOST, SERVER_PORT, BUFFER_SIZE)
 
 dicOpcoes = {1: oPeer.requestJOIN,
-             2: None,
-             3: None,
+             2: oPeer.requestSEARCH,
+             3: oPeer.requestDOWNLOAD,
              4: oPeer.requestLEAVE}
-
 
 while True:
   
