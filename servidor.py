@@ -2,6 +2,8 @@
 Desenvolvedor: Gabriel Rios Souza
 Data: 01/06/2021
 Objetivo: Classe para representar o Servidor no sistema de compartilhamento de Arquivos
+
+https://www.thepythoncode.com/article/send-receive-files-using-sockets-python
 '''
 
 #Bibliotecas Padrão do Python
@@ -45,6 +47,7 @@ class Servidor:
         if oMensagemRecebida.head == "JOIN": self.executeJOIN(oMensagemRecebida)
         elif oMensagemRecebida.head == "SEARCH": self.executeSEARCH(oMensagemRecebida)
         elif oMensagemRecebida.head == "LEAVE": self.executeLEAVE(oMensagemRecebida)
+        elif oMensagemRecebida.head == "UPDATE": self.executeUPDATE(oMensagemRecebida)
         
     def executeJOIN(self, oMensagem) -> None:
         '''Executa a Requisição JOIN vinda do Peer'''
@@ -82,6 +85,27 @@ class Servidor:
         oSocket.sendto(oMensagemEnvio.toJSON(), peerAddress)
         oSocket.close()
          
+    def executeUPDATE(self, oMensagem) -> None:
+        '''Executa a Requisição UPDATE vinda do Peer'''
+        
+        #Recebendo Endereço do Peer e Arquivo para Atualizar
+        peerAddress = tuple(oMensagem.body['PeerAddress'])
+        file = oMensagem.body['File']
+        
+        # Enviando Resposta ao Peer:
+        oSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #UDP Using Internet Address IPv4
+        
+        # Atualiza o arquivo com o Peer na estrutura de dados do Servidor
+        if file in self.dicFiles: self.dicFiles[file].append(peerAddress)
+        else: self.dicFiles[file] = [peerAddress]
+        self.dicPeers[peerAddress].append(file)
+        
+        oMensagemEnvio = Mensagem("UPDATE_OK", {})
+        oSocket.sendto(oMensagemEnvio.toJSON(), peerAddress)
+        
+        oSocket.close()
+    
+    
     def executeLEAVE(self, oMensagem) -> None:
         '''Executa a Requisição LEAVE vinda do Peer'''
         
@@ -107,8 +131,8 @@ class Servidor:
 #########################################################################################
 
 # Constantes
-PORT = 10098            # Listen on (1-65535, non-privileged ports are > 1023)
-BUFFER_SIZE = 1024
+PORT = 10098  # Listen on (1-65535, non-privileged ports are > 1023)
+BUFFER_SIZE = 4096
 
 # Iniciando Servidor
 HOST = input("IP do Servidor: ")      # Hostname, IP Address or empty string. (localhost IP)
