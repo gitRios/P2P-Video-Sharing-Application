@@ -9,9 +9,11 @@ https://www.thepythoncode.com/article/send-receive-files-using-sockets-python
 #Bibliotecas Padrão do Python
 import socket
 import threading
+import time
 
 #Classes Criadas
 from mensagem import Mensagem
+
 
 class Servidor:
     
@@ -29,6 +31,11 @@ class Servidor:
 
     def listen(self) -> None:
         '''Metodo para iniciar o servidor e aguardar mensagens dos Peers'''
+
+        # Criando Thread para enviar requisições ALIVE aos Peers
+        threadALIVE = threading.Thread(group=None, target=self.requestALIVE, args=())
+        threadALIVE.daemon = True #Configurando a Thread como Daemon para que interrompa caso acabe o programa.
+        threadALIVE.start()
 
         while True:
 
@@ -105,7 +112,6 @@ class Servidor:
         
         oSocket.close()
     
-    
     def executeLEAVE(self, oMensagem) -> None:
         '''Executa a Requisição LEAVE vinda do Peer'''
         
@@ -123,7 +129,47 @@ class Servidor:
         oMensagemEnvio = Mensagem("LEAVE_OK", {})
         oSocket.sendto(oMensagemEnvio.toJSON(), peerAddress)
         oSocket.close()
+     
+    def requestALIVE(self) -> None:
+        '''Thread para verificar se os Peers ainda estão na Rede'''
         
+        oSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #UDP Using Internet Address IPv4
+        oSocket.settimeout(5)
+
+        while True:    
+            lPeers = list(self.dicPeers.keys())
+            
+            for peerAddress in lPeers:
+                print(peerAddress)
+                
+                try:
+                    # Enviando Verificação ao Peer:
+                    oMensagemEnvio = Mensagem("ALIVE", {})
+                    oSocket.sendto(oMensagemEnvio.toJSON(), peerAddress)
+                    
+                    # Recebendo Resposta do Peer
+                    peerJSON, _ = oSocket.recvfrom(self.BUFFER_SIZE)
+                    oMensagemResposta = Mensagem(jsonMessage=peerJSON)
+
+                    if oMensagemResposta.head == "ALIVE_OK":
+                        continue
+                
+                except Exception as e:
+                    #Timeout para Resposta do Peer -> Peer fora da Rede, Remove o Peer do Servidor
+                    removeFiles = self.dicPeers[peerAddress]
+                    del self.dicPeers[peerAddress]
+                    
+                    for file in removeFiles: 
+                        self.dicFiles[file].remove(peerAddress)
+                        if self.dicFiles[file] == []: del self.dicFiles[file]
+                    
+                    print(f"Peer {peerAddress[0]}:{peerAddress[1]} morto. Eliminando seus arquivos {' '.join(removeFiles)}")
+
+            
+            time.sleep(30)
+                    
+        oSocket.close()
+
     def close(self) -> None:
         self.socketUDP.close()
 

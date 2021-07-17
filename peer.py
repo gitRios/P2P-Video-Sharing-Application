@@ -59,6 +59,11 @@ class Peer:
       thread = threading.Thread(group=None, target=self.startSocketTCP, args=())
       thread.daemon = True #Configurando a Thread como Daemon para que interrompa caso acabe o programa.
       thread.start()
+      
+      # Criando Thread para receber respostas e requisições ALIVE do Servidor
+      threadALIVE = threading.Thread(group=None, target=self.listen, args=())
+      threadALIVE.daemon = True #Configurando a Thread como Daemon para que interrompa caso acabe o programa.
+      threadALIVE.start()
 
   def requestSEARCH(self) -> None:
     '''Realiza o request SEARCH do Peer ao Servidor'''
@@ -72,17 +77,10 @@ class Peer:
     oMensagemEnvio = Mensagem("SEARCH", dicBody)    
     
     #Enviar Request SEARCH ao Servidor
-    self.socketUDP.sendto(oMensagemEnvio.toJSON(), self.SERVER_ADDRESS)
-
-    #Recebe Resposta do Servidor
-    serverJSON, _ = self.socketUDP.recvfrom(self.BUFFER_SIZE)
-    oMensagemResposta = Mensagem(jsonMessage=serverJSON)
-
-    if oMensagemResposta.head == "SEARCH_OK":
-      if oMensagemResposta.body['PeersList'] != []:
-        print(f"Peers com arquivo solicitado: {' '.join([str(peerAddres[0])+':'+str(peerAddres[1]) for peerAddres in oMensagemResposta.body['PeersList']])}")
-      else: print("Não há Peers com o arquivo solicitado")
-       
+    oSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #UDP Using Internet Address IPv4    
+    oSocket.sendto(oMensagemEnvio.toJSON(), self.SERVER_ADDRESS)    
+    oSocket.close()
+    
   def requestDOWNLOAD(self) -> None:
     '''Realiza o request DOWNLOAD do Peer a outro Peer'''
     
@@ -126,11 +124,11 @@ class Peer:
                 # write to the file the bytes we just received
                 newFile.write(bytes_read)
         print(f"Arquivo {file} baixado com sucesso na pasta {self.PATH}")
+        self.requestUPDATE(file)
       
-    except socket.timeout as e:
+    except Exception as e:
       print(e)            
     
-    self.requestUPDATE(file)
     oSocketTCP.close()   
 
   def requestLEAVE(self) -> None:
@@ -141,14 +139,10 @@ class Peer:
     oMensagemEnvio = Mensagem("LEAVE", dicBody)    
     
     #Enviar Request LEAVE ao Servidor
-    self.socketUDP.sendto(oMensagemEnvio.toJSON(), self.SERVER_ADDRESS)
-
-    #Recebe Resposta do Servidor
-    serverJSON, serverAddr = self.socketUDP.recvfrom(self.BUFFER_SIZE)
-    oMensagemResposta = Mensagem(jsonMessage=serverJSON)
-
-    if oMensagemResposta.head == "LEAVE_OK": self.close()
-
+    oSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #UDP Using Internet Address IPv4    
+    oSocket.sendto(oMensagemEnvio.toJSON(), self.SERVER_ADDRESS)    
+    oSocket.close()
+    
   def requestUPDATE(self, file) -> None:
     '''Realiza o request UPDATE do Peer ao Servidor'''
     
@@ -158,13 +152,9 @@ class Peer:
     oMensagemEnvio = Mensagem("UPDATE", dicBody)    
     
     #Enviar Request UPDATE ao Servidor
-    self.socketUDP.sendto(oMensagemEnvio.toJSON(), self.SERVER_ADDRESS)
-
-    #Recebe Resposta do Servidor
-    serverJSON, _ = self.socketUDP.recvfrom(self.BUFFER_SIZE)
-    oMensagemResposta = Mensagem(jsonMessage=serverJSON)
-
-    if oMensagemResposta.head == "UPDATE_OK": pass
+    oSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #UDP Using Internet Address IPv4    
+    oSocket.sendto(oMensagemEnvio.toJSON(), self.SERVER_ADDRESS)    
+    oSocket.close()
 
   def startSocketTCP(self) -> None:
     
@@ -216,6 +206,26 @@ class Peer:
          
     oSocketConnected.close()
     
+  def listen(self) -> None:
+    '''Thread para receber respostas e requisições ALIVE do Servidor'''
+        
+    while True:
+        # Recebendo Mensagem do Peer
+        serverJSON, serverAddress = self.socketUDP.recvfrom(BUFFER_SIZE)
+        oMensagemRecebida = Mensagem(jsonMessage=serverJSON)
+        
+        if oMensagemRecebida.head == "ALIVE":
+          oMensagemEnvio = Mensagem("ALIVE_OK", {})
+          self.socketUDP.sendto(oMensagemEnvio.toJSON(), serverAddress)
+        
+        elif oMensagemRecebida.head == "SEARCH_OK":
+          if oMensagemRecebida.body['PeersList'] != []:
+            print(f"Peers com arquivo solicitado: {' '.join([str(peerAddres[0])+':'+str(peerAddres[1]) for peerAddres in oMensagemRecebida.body['PeersList']])}")
+          else: print("Não há Peers com o arquivo solicitado")
+        
+        elif oMensagemRecebida.head == "LEAVE_OK": self.close()
+        elif oMensagemRecebida.head == "UPDATE_OK": pass
+        
   def getFilesFromPath(self) -> None:
     '''Analisa pasta do Peer e retorna lista de arquivos .mp4'''
     entries = os.listdir(self.PATH)
@@ -230,6 +240,9 @@ class Peer:
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 10098
 BUFFER_SIZE = 4096
+
+
+#Trocar o SocketUDP das requisições por oSocket
 
 #Iniciar Peer
 oPeer = Peer(SERVER_HOST, SERVER_PORT, BUFFER_SIZE)
